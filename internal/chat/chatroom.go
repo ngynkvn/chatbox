@@ -13,7 +13,7 @@ import (
 	"github.com/gliderlabs/ssh"
 )
 
-func NewClient(username string, pty ssh.Pty, send chan<- string, recv chan string) Client {
+func NewClient(username string, pty ssh.Pty, send chan<- string, recv chan Msg) Client {
 	ti := textinput.New()
 	ti.Focus()
 	ti.CharLimit = 128
@@ -39,8 +39,8 @@ func (chatRoom *ChatRoom) withLock(tag string, f func()) {
 	chatRoom.mutex.Unlock()
 }
 
-func (chatRoom *ChatRoom) Subscribe(username string) chan string {
-	ch := make(chan string, 1024)
+func (chatRoom *ChatRoom) Subscribe(username string) chan Msg {
+	ch := make(chan Msg, 1024)
 	go chatRoom.withLock("SUBSCRIBE", func() {
 		_, ok := chatRoom.users[username]
 		if ok {
@@ -51,8 +51,7 @@ func (chatRoom *ChatRoom) Subscribe(username string) chan string {
 			chatRoom.users[username] = ch
 		}
 		chatRoom.Inbox <- username + " has joined"
-		ch <- chatRoom.history()
-
+		ch <- MsgChat{chatRoom.history()}
 	})
 	return ch
 }
@@ -66,12 +65,11 @@ func (chatRoom *ChatRoom) history() string {
 	return strings.Join(chatRoom.lines, "\n")
 }
 
-func (chatRoom *ChatRoom) SendAll() {
-	chatRoom.withLock("SendAll", func() {
+func (chatRoom *ChatRoom) SendAll(m Msg) {
+	chatRoom.withLock("SendAll:"+m.Tag(), func() {
 		log.Printf("--- 📤️ %d to send\n", len(chatRoom.users))
-		chat := chatRoom.history()
 		for _, ch := range chatRoom.users {
-			ch <- chat
+			ch <- m
 		}
 	})
 }
@@ -86,7 +84,7 @@ func logTime(tag string, f func()) {
 func StartChatRoom() (context.Context, context.CancelFunc, *ChatRoom) {
 	chatRoom := ChatRoom{
 		lines: []string{"Welcome!"},
-		users: make(map[string]chan<- string),
+		users: make(map[string]chan<- Msg),
 		Inbox: make(chan string, 1024),
 	}
 	// Entry point for new messages from subscriptions.
@@ -95,7 +93,8 @@ func StartChatRoom() (context.Context, context.CancelFunc, *ChatRoom) {
 			logTime("SendAll", func() {
 				log.Printf("RECV: %s, %d chars long", msg, len(msg))
 				chatRoom.lines = append(chatRoom.lines, msg)
-				chatRoom.SendAll()
+				chat := MsgChat{chat: strings.Join(chatRoom.lines, "\n")}
+				chatRoom.SendAll(chat)
 			})
 		}
 	}()

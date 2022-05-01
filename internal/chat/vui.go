@@ -13,8 +13,8 @@ func (m Client) Init() tea.Cmd {
 func (m Client) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
-	case ChatUpdate:
-		return m.updateChat(msg.chat)
+	case RecvMsg:
+		return m.handleRecvMsg(msg)
 	case tea.KeyMsg:
 		switch msg.Type {
 		// quit on ctrl+c
@@ -86,11 +86,16 @@ func (m Client) View() string {
 
 func (m Client) pollChat() tea.Msg {
 	chat := <-m.recv
-	return ChatUpdate{chat: chat}
+	return RecvMsg{Msg: chat}
 }
 
-func (m *Client) updateChat(chat string) (tea.Model, tea.Cmd) {
-	m.chat = chat
+func (m *Client) handleRecvMsg(msg RecvMsg) (tea.Model, tea.Cmd) {
+	switch msg := msg.Msg.(type) {
+	case MsgChat:
+		m.chat = msg.chat
+	case MsgUserList:
+		m.users = msg.users
+	}
 	m.polls = m.polls + 1
 	return m, m.pollChat
 }
