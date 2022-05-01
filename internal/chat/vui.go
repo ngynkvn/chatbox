@@ -1,8 +1,6 @@
 package chat
 
 import (
-	"fmt"
-
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -23,9 +21,8 @@ func (m Client) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 		case tea.KeyEnter:
-			m.input.SetCursorMode(textinput.CursorHide)
-			m.push <- m.input.View()
-			m.input.SetCursorMode(textinput.CursorBlink)
+			i := m.input
+			m.push <- i.PromptStyle.Render(i.Prompt) + i.TextStyle.Render(i.Value())
 			m.input.Reset()
 		}
 	}
@@ -33,9 +30,54 @@ func (m Client) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+const cat = "猫咪"
+
+// Style definitions.
+var (
+
+	// General.
+
+	subtle    = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#383838"}
+	highlight = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#7D56F4"}
+	special   = lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"}
+)
+
 func (m Client) View() string {
-	var promptStyle = lipgloss.NewStyle().Width(m.width).Height(3)
-	return fmt.Sprintf("==Secret Club %d==\n%s\n%s", m.polls, m.chat, promptStyle.Render(m.input.View()))
+	// Given the terminal size, print the chat and user list
+	w, h := m.width, m.height
+
+	var chatWindowStyle = lipgloss.NewStyle().
+		MaxWidth(w).
+		MaxHeight(h).
+		PaddingLeft(1).
+		Foreground(subtle).
+		Border(lipgloss.RoundedBorder())
+	fw, fh := chatWindowStyle.GetFrameSize()
+	w, h = w-fw, h-fh
+
+	// User list render
+	// var userHeaderStyle = lipgloss.NewStyle().
+	// 	Bold(true).
+	// 	BorderStyle(lipgloss.ThickBorder()).
+	// 	BorderBottom(true)
+	var userListStyle = lipgloss.NewStyle().
+		Width(12).
+		BorderForeground(subtle).
+		Border(lipgloss.RoundedBorder())
+	var header = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(special).
+		SetString("Users\n=====")
+	userList := userListStyle.Render(header.String() + "\nme\nfriendo\nstevenn\ngato")
+	// Render the chatbox container
+	var chatContentStyle = lipgloss.NewStyle().
+		Width(w - fw - userListStyle.GetWidth()).
+		PaddingTop(1).
+		Height(h - fh)
+	chat := chatContentStyle.Render(lipgloss.JoinVertical(0, m.chat, m.input.View()))
+
+	return chatWindowStyle.Render(lipgloss.JoinHorizontal(0, chat, userList))
+
 }
 
 /**

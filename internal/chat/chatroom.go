@@ -18,6 +18,7 @@ func NewClient(username string, pty ssh.Pty, push chan<- string, pull chan strin
 	ti.CharLimit = 128
 	ti.Prompt = username + ": "
 	ti.PromptStyle = ti.PromptStyle.Foreground(randomColor())
+	ti.Width = 80
 	ti.TextStyle = ti.TextStyle.Foreground(randomColor())
 	return Client{
 		width:    pty.Window.Width,
@@ -36,7 +37,7 @@ func StartChatRoom() (context.Context, context.CancelFunc, func(username string)
 	}
 	go func() {
 		for msg := range inbox {
-			log.Printf("RECV: %s\n", msg)
+			log.Printf("RECV: %s, %d chars long", msg, len(msg))
 			chatRoom.lines = append(chatRoom.lines, msg)
 			chatRoom.mutex.Lock()
 			log.Printf("LOCK: %d to send\n", len(chatRoom.subscriptions))
