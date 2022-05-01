@@ -19,14 +19,30 @@ import (
 const host = "0.0.0.0"
 const port = 2222
 
+type subscribeFn func(string) chan string
+
+// Middleware for connecting to the chatroom.
+func ChatSession(chat *chat.ChatRoom) wish.Middleware {
+	return func(sh ssh.Handler) ssh.Handler {
+		return func(s ssh.Session) {
+			user := s.User()
+			chat.Subscribe(user)
+			sh(s)
+			log.Println("Closing chatroom subscription for", user)
+			chat.Unsubscribe(user)
+		}
+	}
+}
+
 func main() {
-	ctx, cancel, subscribe, inbox := chat.StartChatRoom()
+	ctx, cancel, chatRoom := chat.StartChatRoom()
 	defer cancel()
 	s, err := wish.NewServer(
 		wish.WithAddress(fmt.Sprintf("%s:%d", host, port)),
 		wish.WithHostKeyPath(".ssh/term_info_ed25519"),
 		wish.WithMiddleware(
-			bm.Middleware(teaHandler(subscribe, inbox)),
+			ChatSession(chatRoom),
+			bm.Middleware(teaHandler(chatRoom)),
 			lm.Middleware(),
 		),
 	)
@@ -54,16 +70,16 @@ func main() {
 // handles the incoming ssh.Session. Here we just grab the terminal info and
 // pass it to the new model. You can also return tea.ProgramOptions (such as
 // teaw.WithAltScreen) on a session by session basis
-func teaHandler(subscribe func(username string) chan string, push chan<- string) bm.Handler {
+func teaHandler(chatRoom *chat.ChatRoom) bm.Handler {
 	handler := func(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 		username := s.User()
 		pty, _, active := s.Pty()
-		pull := subscribe(username)
 		if !active {
 			fmt.Println("no active terminal, skipping")
 			return nil, nil
 		}
-		m := chat.NewClient(username, pty, push, pull)
+		recv := chatRoom.Subscribe(username)
+		m := chat.NewClient(username, pty, chatRoom.Inbox, recv)
 		return m, []tea.ProgramOption{tea.WithAltScreen()}
 	}
 	return handler

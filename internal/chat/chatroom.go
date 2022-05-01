@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
@@ -12,7 +13,7 @@ import (
 	"github.com/gliderlabs/ssh"
 )
 
-func NewClient(username string, pty ssh.Pty, push chan<- string, pull chan string) Client {
+func NewClient(username string, pty ssh.Pty, send chan<- string, recv chan string) Client {
 	ti := textinput.New()
 	ti.Focus()
 	ti.CharLimit = 128
@@ -25,46 +26,84 @@ func NewClient(username string, pty ssh.Pty, push chan<- string, pull chan strin
 		height:   pty.Window.Height,
 		username: username,
 		input:    ti,
-		pull:     pull,
-		push:     push,
+		recv:     recv,
+		send:     send,
 	}
 }
 
-func StartChatRoom() (context.Context, context.CancelFunc, func(username string) chan string, chan<- string) {
-	inbox := make(chan string, 1024)
+func (chatRoom *ChatRoom) withLock(tag string, f func()) {
+	log.Printf("[🔒 %s] LOCK", tag)
+	chatRoom.mutex.Lock()
+	f()
+	log.Printf("[🔒 %s] UNLOCK", tag)
+	chatRoom.mutex.Unlock()
+}
+
+func (chatRoom *ChatRoom) Subscribe(username string) chan string {
+	ch := make(chan string, 1024)
+	go chatRoom.withLock("SUBSCRIBE", func() {
+		_, ok := chatRoom.users[username]
+		if ok {
+			log.Println("[Subscribe] Already subscribed")
+			close(ch)
+			return
+		} else {
+			chatRoom.users[username] = ch
+		}
+		chatRoom.Inbox <- username + " has joined"
+		ch <- chatRoom.history()
+
+	})
+	return ch
+}
+
+func (chatRoom *ChatRoom) Unsubscribe(username string) {
+	chatRoom.withLock("UNSUBSCRIBE", func() {
+		delete(chatRoom.users, username)
+	})
+}
+func (chatRoom *ChatRoom) history() string {
+	return strings.Join(chatRoom.lines, "\n")
+}
+
+func (chatRoom *ChatRoom) SendAll() {
+	chatRoom.withLock("SendAll", func() {
+		log.Printf("--- 📤️ %d to send\n", len(chatRoom.users))
+		chat := chatRoom.history()
+		for _, ch := range chatRoom.users {
+			ch <- chat
+		}
+	})
+}
+
+func logTime(tag string, f func()) {
+	now := time.Now()
+	f()
+	after := time.Now()
+	log.Printf("[⏱ %s] took %s", tag, after.Sub(now))
+}
+
+func StartChatRoom() (context.Context, context.CancelFunc, *ChatRoom) {
 	chatRoom := ChatRoom{
 		lines: []string{"Welcome!"},
+		users: make(map[string]chan<- string),
+		Inbox: make(chan string, 1024),
 	}
+	// Entry point for new messages from subscriptions.
 	go func() {
-		for msg := range inbox {
-			log.Printf("RECV: %s, %d chars long", msg, len(msg))
-			chatRoom.lines = append(chatRoom.lines, msg)
-			chatRoom.mutex.Lock()
-			log.Printf("LOCK: %d to send\n", len(chatRoom.subscriptions))
-			for _, ch := range chatRoom.subscriptions {
-				s := strings.Join(chatRoom.lines, "\n")
-				ch <- s
-			}
-			chatRoom.mutex.Unlock()
-			log.Printf("UNLOCK\n")
+		for msg := range chatRoom.Inbox {
+			logTime("SendAll", func() {
+				log.Printf("RECV: %s, %d chars long", msg, len(msg))
+				chatRoom.lines = append(chatRoom.lines, msg)
+				chatRoom.SendAll()
+			})
 		}
 	}()
-	subscribe := func(username string) chan string {
-		ch := make(chan string, 1024)
-		go func() {
-			chatRoom.mutex.Lock()
-			log.Println("[Subscribe] LOCK")
-			chatRoom.subscriptions = append(chatRoom.subscriptions, ch)
-			s := strings.Join(chatRoom.lines, "\n")
-			inbox <- username + " has joined"
-			ch <- s
-			chatRoom.mutex.Unlock()
-			log.Println("[Subscribe] UNLOCK")
-		}()
-		return ch
-	}
+
+	// Function to subscribe to the chat room.
+
 	ctx, cancel := context.WithCancel(context.Background())
-	return ctx, cancel, subscribe, inbox
+	return ctx, cancel, &chatRoom
 }
 
 /**

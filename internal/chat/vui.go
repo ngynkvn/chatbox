@@ -22,7 +22,7 @@ func (m Client) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case tea.KeyEnter:
 			i := m.input
-			m.push <- i.PromptStyle.Render(i.Prompt) + i.TextStyle.Render(i.Value())
+			m.send <- i.PromptStyle.Render(i.Prompt) + i.TextStyle.Render(i.Value())
 			m.input.Reset()
 		}
 	}
@@ -85,7 +85,7 @@ func (m Client) View() string {
  */
 
 func (m Client) pollChat() tea.Msg {
-	chat := <-m.pull
+	chat := <-m.recv
 	return ChatUpdate{chat: chat}
 }
 

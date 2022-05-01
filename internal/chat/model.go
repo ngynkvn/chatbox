@@ -11,15 +11,16 @@ type ChatUpdate struct {
 }
 
 type ChatRoom struct {
-	lines         []string
-	mutex         sync.Mutex
-	subscriptions []chan<- string
+	lines []string
+	mutex sync.Mutex
+	users map[string]chan<- string
+	Inbox chan string
 }
 
 type Client struct {
 	input    textinput.Model
-	pull     chan string
-	push     chan<- string
+	recv     chan string
+	send     chan<- string
 	username string
 	polls    int
 	chat     string
