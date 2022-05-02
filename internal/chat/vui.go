@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -68,7 +70,7 @@ func (m Client) View() string {
 		Bold(true).
 		Foreground(special).
 		SetString("Users\n=====")
-	userList := userListStyle.Render(header.String() + "\nme\nfriendo\nstevenn\ngato")
+	userList := userListStyle.Render(header.String() + "\n" + strings.Join(m.users, "\n"))
 	// Render the chatbox container
 	var chatContentStyle = lipgloss.NewStyle().
 		Width(w - fw - userListStyle.GetWidth()).
