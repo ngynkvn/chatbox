@@ -26,10 +26,11 @@ func ChatSession(chat *chat.ChatRoom) wish.Middleware {
 	return func(sh ssh.Handler) ssh.Handler {
 		return func(s ssh.Session) {
 			user := s.User()
-			chat.Subscribe(user)
+			log.Printf("%s connected", user)
 			sh(s)
 			log.Println("Closing chatroom subscription for", user)
 			chat.Unsubscribe(user)
+			log.Printf("%#v", chat.GetUsers())
 		}
 	}
 }
